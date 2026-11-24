@@ -65,6 +65,12 @@ npm run build
 npm run preview
 ```
 
+打包独立单 HTML 文件（离线双击即用，产物位于 `dist-single/index.html`）：
+
+```bash
+npm run build:single
+```
+
 ---
 
 ## 目录结构
