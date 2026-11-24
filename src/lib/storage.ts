@@ -6,7 +6,7 @@ import type {
   WorkloadConfig,
 } from '@/types/calculator';
 
-const STORAGE_KEY = 'agent-compute-estimator:config:v2';
+const STORAGE_KEY = 'agent-compute-estimator:config:v3';
 
 export interface PersistedState {
   version: number;

@@ -274,9 +274,12 @@ export function WorkloadPanel({
                   value={activeWorkload.avgInputTokens}
                   onChange={(e) =>
                     onUpdateWorkload(activeWorkload.id, {
-                      avgInputTokens: parsePositiveNumber(
-                        e.target.value,
-                        activeWorkload.avgInputTokens,
+                      avgInputTokens: Math.max(
+                        1,
+                        parsePositiveNumber(
+                          e.target.value,
+                          activeWorkload.avgInputTokens,
+                        ),
                       ),
                     })
                   }
@@ -292,9 +295,12 @@ export function WorkloadPanel({
                   value={activeWorkload.avgOutputTokens}
                   onChange={(e) =>
                     onUpdateWorkload(activeWorkload.id, {
-                      avgOutputTokens: parsePositiveNumber(
-                        e.target.value,
-                        activeWorkload.avgOutputTokens,
+                      avgOutputTokens: Math.max(
+                        1,
+                        parsePositiveNumber(
+                          e.target.value,
+                          activeWorkload.avgOutputTokens,
+                        ),
                       ),
                     })
                   }
@@ -379,7 +385,7 @@ export function WorkloadPanel({
                     开启高峰突发流量建模
                   </p>
                   <p className="text-[11px] text-muted-foreground">
-                    按高峰时段集中度与瞬时峰值系数估算；关闭后按全天 24 小时均匀分布计算
+                    按高峰时段集中度与忙时波动系数估算；关闭后按 8 小时工作日均匀分布计算
                   </p>
                 </div>
                 <Switch
@@ -403,7 +409,7 @@ export function WorkloadPanel({
                       id="wl-peak-hours"
                       type="number"
                       min={0.5}
-                      max={24}
+                      max={8}
                       step={0.5}
                       disabled={!settings.enablePeakModel}
                       value={activeWorkload.peakHours}
@@ -412,7 +418,7 @@ export function WorkloadPanel({
                           peakHours: Math.max(
                             0.5,
                             Math.min(
-                              24,
+                              8,
                               parsePositiveNumber(
                                 e.target.value,
                                 activeWorkload.peakHours,
@@ -425,7 +431,7 @@ export function WorkloadPanel({
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="wl-burst" className="text-muted-foreground">
-                      瞬时峰值系数（Peak/Avg）
+                      忙时波动系数（Peak/Avg）
                     </Label>
                     <Input
                       id="wl-burst"

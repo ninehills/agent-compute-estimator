@@ -128,6 +128,11 @@ export interface ModelEvalResult {
   workloadDetails: WorkloadEvalDetail[];
   totalDailyTasks: number;
   totalDailyRequests: number;
+  totalDailyInputTokens: number;
+  totalDailyOutputTokens: number;
+  totalDailyCachedTokens: number;
+  avgTaskDurationSec: number;
+  avgCacheHitRate: number;
   totalPeakAvgRps: number;
   totalBurstRps: number;
   totalPeakOutputTps: number;

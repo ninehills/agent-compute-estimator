@@ -187,7 +187,7 @@ export function App() {
       dailyTasks: 1000,
       peakHours: 4,
       peakTrafficShare: 0.7,
-      burstFactor: 2.0,
+      burstFactor: 1.2,
     };
     setWorkloads((prev) => [...prev, newItem]);
     setSelectedWorkloadId(newId);
@@ -264,12 +264,12 @@ export function App() {
         long_in_high_cache: {
           conc: 24,
           outputTps: 520,
-          ttftMs: 1400,
+          ttftMs: 2600,
         },
         long_in_long_out: {
           conc: 16,
           outputTps: 310,
-          ttftMs: 4800,
+          ttftMs: 1800,
         },
       },
     };
@@ -447,6 +447,22 @@ export function App() {
           </TabsPanel>
         </Tabs>
       </main>
+
+      <footer className="mx-auto max-w-[1440px] px-4 pb-8 pt-2 sm:px-6">
+        <div className="rounded-xl border border-border/70 bg-muted/30 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="font-medium text-foreground/85">建模口径与数据参考说明</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            <li>
+              <span className="font-medium text-foreground/80">高峰流量参考：</span>
+              基于 BurstGPT（arXiv:2401.17644，Azure OpenAI 千万级企业生产流量追踪，全天 24h 峰均比约 4.1×、忙时 5 分钟窗口波动中位数约 1.25×）与政企 8 小时工作制办公曲线校准；关闭高峰模型时按 8 小时工作日均摊。
+            </li>
+            <li>
+              <span className="font-medium text-foreground/80">防重复叠加原则：</span>
+              忙时波动系数（1.10–1.30×）仅刻画 10–15 分钟级业务波峰经长耗时 LLM 推理平滑后的残余波动；秒级随机泊松抖动与排队缓冲由「目标安全资源水位（默认 80%）」统一承担。
+            </li>
+          </ul>
+        </div>
+      </footer>
 
       <ReportDialog
         open={reportOpen}

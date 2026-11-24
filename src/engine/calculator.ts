@@ -120,24 +120,28 @@ function interpolateTtftMs(
   const t2 = model.benchmarks[s2.key].ttftMs;
 
   const effPrefill = Math.max(0, inputTokens * (1 - cacheHitRate));
+  const ultraLongPrefixFactor =
+    inputTokens > s3.promptTokens
+      ? 1 + (0.15 * (inputTokens - s3.promptTokens)) / 65536
+      : 1;
 
   if (effPrefill <= e1) {
     const t0 = t1 * 0.4;
     const ratio = e1 > 0 ? effPrefill / e1 : 0;
-    return t0 + (t1 - t0) * ratio;
+    return (t0 + (t1 - t0) * ratio) * ultraLongPrefixFactor;
   }
   if (effPrefill <= e3) {
     const ratio = (effPrefill - e1) / Math.max(e3 - e1, 1);
-    return t1 + (t3 - t1) * ratio;
+    return (t1 + (t3 - t1) * ratio) * ultraLongPrefixFactor;
   }
   if (effPrefill <= e2) {
     const ratio = (effPrefill - e3) / Math.max(e2 - e3, 1);
-    return t3 + (t2 - t3) * ratio;
+    return (t3 + (t2 - t3) * ratio) * ultraLongPrefixFactor;
   }
 
   const slope = Math.max(t2 - t1, 50) / Math.max(e2 - e1, 1);
   const longCtxFactor = 1 + (0.25 * Math.max(inputTokens - s2.promptTokens, 0)) / 65536;
-  return t2 + slope * (effPrefill - e2) * longCtxFactor;
+  return t2 * ultraLongPrefixFactor + slope * (effPrefill - e2) * longCtxFactor;
 }
 
 function evaluateSingleWorkload(
@@ -145,10 +149,10 @@ function evaluateSingleWorkload(
   workload: WorkloadConfig,
   settings: GlobalEvalSettings,
 ): WorkloadEvalDetail {
-  const safePeakHours = Math.max(workload.peakHours, 0.1);
+  const safePeakHours = Math.min(Math.max(workload.peakHours, 0.1), 8);
   const safeTurns = Math.max(workload.turnsPerTask, 1);
   const safeDailyTasks = Math.max(workload.dailyTasks, 0);
-  const minPeakShare = Math.min(safePeakHours / 24, 1);
+  const minPeakShare = Math.min(safePeakHours / 8, 1);
   const safePeakShare = Math.min(
     Math.max(workload.peakTrafficShare, minPeakShare),
     1,
@@ -162,7 +166,7 @@ function evaluateSingleWorkload(
   const dailyRequests = safeDailyTasks * safeTurns;
   const peakAvgRps = settings.enablePeakModel
     ? (dailyRequests * safePeakShare) / (safePeakHours * 3600)
-    : dailyRequests / (24 * 3600);
+    : dailyRequests / (8 * 3600);
   const burstRps = settings.enablePeakModel
     ? peakAvgRps * safeBurst
     : peakAvgRps;
@@ -187,8 +191,8 @@ function evaluateSingleWorkload(
   const b3 = model.benchmarks[s3.key];
 
   const cap1 = getScenarioWeightedTps(model, s1);
-  const cap2 = Math.min(getScenarioWeightedTps(model, s2), cap1);
-  const cap3 = Math.min(getScenarioWeightedTps(model, s3), cap2);
+  const cap2 = getScenarioWeightedTps(model, s2);
+  const cap3 = getScenarioWeightedTps(model, s3);
   const caps = [cap1, cap2, cap3];
 
   const tpot1 = getScenarioTrueTpotMs(model, s1);
@@ -309,17 +313,28 @@ function buildFormulaSteps(
   const isSingle = details.length === 1;
   const first = details[0];
   const utilPct = formatPercent(settings.targetUtil, 0);
+  const firstSafePeakHours = Math.min(Math.max(first.workload.peakHours, 0.1), 8);
+  const firstSafePeakShare = Math.min(
+    Math.max(first.workload.peakTrafficShare, Math.min(firstSafePeakHours / 8, 1)),
+    1,
+  );
+  const firstSafeTasks = Math.max(first.workload.dailyTasks, 0);
+  const firstSafeTurns = Math.max(first.workload.turnsPerTask, 1);
+  const firstSafeInput = Math.max(first.workload.avgInputTokens, 1);
+  const firstSafeOutput = Math.max(first.workload.avgOutputTokens, 1);
+  const firstSafeBurst = Math.max(first.workload.burstFactor, 1);
+  const firstSafeCacheHit = Math.min(Math.max(first.workload.cacheHitRate, 0), 0.99);
 
   const step1Sub = settings.enablePeakModel
     ? isSingle
-      ? `高峰均值 RPS = (${formatNumber(first.workload.dailyTasks)} × ${first.workload.turnsPerTask} × ${formatPercent(Math.max(first.workload.peakTrafficShare, first.workload.peakHours / 24), 0)}) ÷ (${first.workload.peakHours} × 3600) = ${formatDecimal(first.peakAvgRps, 2)} req/s；突发峰值 RPS = ${formatDecimal(first.peakAvgRps, 2)} × ${first.workload.burstFactor} = ${formatDecimal(first.burstRps, 2)} req/s`
+      ? `忙时均值 RPS = (${formatNumber(firstSafeTasks)} × ${firstSafeTurns} × ${formatPercent(firstSafePeakShare, 0)}) ÷ (${firstSafePeakHours} × 3600) = ${formatDecimal(first.peakAvgRps, 2)} req/s；忙时峰值 RPS = ${formatDecimal(first.peakAvgRps, 2)} × ${firstSafeBurst} = ${formatDecimal(first.burstRps, 2)} req/s`
       : `按同峰最坏重叠（同时率 1.0）累加 ${details.length} 个场景：${details.map((d) => `${d.workload.name}(${formatDecimal(d.burstRps, 2)})`).join(' + ')} = ${formatDecimal(totals.totalBurstRps, 2)} req/s`
     : isSingle
-      ? `未开启高峰模型，按全天 24 小时均匀分摊：均值 RPS = (${formatNumber(first.workload.dailyTasks)} × ${first.workload.turnsPerTask}) ÷ (24 × 3600) = ${formatDecimal(first.burstRps, 2)} req/s`
-      : `未开启高峰模型，${details.length} 个场景按全天 24 小时均摊累加：${details.map((d) => `${d.workload.name}(${formatDecimal(d.burstRps, 2)})`).join(' + ')} = ${formatDecimal(totals.totalBurstRps, 2)} req/s`;
+      ? `未开启高峰模型，按 8 小时工作日均匀分摊：均值 RPS = (${formatNumber(firstSafeTasks)} × ${firstSafeTurns}) ÷ (8 × 3600) = ${formatDecimal(first.burstRps, 2)} req/s`
+      : `未开启高峰模型，${details.length} 个场景按 8 小时工作日均摊累加：${details.map((d) => `${d.workload.name}(${formatDecimal(d.burstRps, 2)})`).join(' + ')} = ${formatDecimal(totals.totalBurstRps, 2)} req/s`;
 
   const step2Sub = isSingle
-    ? `峰值输出吞吐 = ${formatDecimal(first.burstRps, 2)} × ${formatNumber(first.workload.avgOutputTokens)} = ${formatNumber(first.peakOutputTps, 0)} tok/s；未命中有效输入 = ${formatDecimal(first.burstRps, 2)} × ${formatNumber(first.workload.avgInputTokens)} × (1 - ${formatPercent(first.workload.cacheHitRate, 0)}) = ${formatNumber(first.effectivePrefillTps, 0)} tok/s；读写综合需求 = ${formatNumber(first.peakOutputTps, 0)} + ${formatNumber(first.effectivePrefillTps, 0)} × ${settings.prefillWeight} = ${formatNumber(first.weightedDemandTps, 0)} tok/s`
+    ? `峰值输出吞吐 = ${formatDecimal(first.burstRps, 2)} × ${formatNumber(firstSafeOutput)} = ${formatNumber(first.peakOutputTps, 0)} tok/s；未命中有效输入 = ${formatDecimal(first.burstRps, 2)} × ${formatNumber(firstSafeInput)} × (1 - ${formatPercent(firstSafeCacheHit, 0)}) = ${formatNumber(first.effectivePrefillTps, 0)} tok/s；读写综合需求 = ${formatNumber(first.peakOutputTps, 0)} + ${formatNumber(first.effectivePrefillTps, 0)} × ${settings.prefillWeight} = ${formatNumber(first.weightedDemandTps, 0)} tok/s`
     : `汇总输出吞吐 = ${formatNumber(totals.totalPeakOutputTps, 0)} tok/s；未命中有效输入 = ${formatNumber(totals.totalEffectivePrefillTps, 0)} tok/s；读写综合需求 = ${formatNumber(totals.totalPeakOutputTps, 0)} + ${formatNumber(totals.totalEffectivePrefillTps, 0)} × ${settings.prefillWeight} = ${formatNumber(totals.totalWeightedDemandTps, 0)} tok/s`;
 
   const weightSummary = totals.primaryWeights
@@ -329,32 +344,35 @@ function buildFormulaSteps(
   const step3Sub = `按总上下文长度 L = 输入 + 输出 在对数轴分段插值（${weightSummary}）→ 单实例输出吞吐 ${formatNumber(totals.effectiveInstOutputTps, 0)} tok/s、稳态并发 ${formatDecimal(totals.effectiveInstConc, 1)} 路、扣除 TTFT 后纯生成 TPOT ${formatDecimal(totals.avgEstTpotMs, 1)} ms；TTFT 按未命中输入量独立插值得 ${formatNumber(totals.avgEstTtftMs, 0)} ms`;
 
   const step4Sub = isSingle
-    ? `单次响应总耗时 = 首字等待 ${formatNumber(first.estTtftMs, 0)}/1000 + 生成阶段 (${formatNumber(first.workload.avgOutputTokens)} × ${formatDecimal(first.estTpotMs, 1)})/1000 = ${formatDecimal(first.estLatencySec, 2)} s；同时在线路数 = ${formatDecimal(first.burstRps, 2)} req/s × ${formatDecimal(first.estLatencySec, 2)} s = ${formatDecimal(first.peakConcurrency, 1)} 路`
+    ? `单次响应总耗时 = 首字等待 ${formatNumber(first.estTtftMs, 0)}/1000 + 生成阶段 (${formatNumber(firstSafeOutput)} × ${formatDecimal(first.estTpotMs, 1)})/1000 = ${formatDecimal(first.estLatencySec, 2)} s；同时在线路数 = ${formatDecimal(first.burstRps, 2)} req/s × ${formatDecimal(first.estLatencySec, 2)} s = ${formatDecimal(first.peakConcurrency, 1)} 路`
     : `各场景分别按「RPS × 单次响应总耗时」求在线并发后累加：${details.map((d) => `${d.workload.name}(${formatDecimal(d.peakConcurrency, 1)}路)`).join(' + ')} = ${formatDecimal(totals.totalPeakConcurrency, 1)} 路`;
 
-  const step5Sub = `① 生成速度维 = ${formatNumber(totals.totalPeakOutputTps, 0)} ÷ (${formatNumber(totals.effectiveInstOutputTps, 0)} × ${utilPct}) = ${formatDecimal(totals.instByDecode, 2)} 实例；② 读写综合算力维 = ${formatNumber(totals.totalWeightedDemandTps, 0)} ÷ (${formatNumber(totals.effectiveInstWeightedTps, 0)} × ${utilPct}) = ${formatDecimal(totals.instByCompute, 2)} 实例；③ 并发槽位维 = ${formatDecimal(totals.totalPeakConcurrency, 1)} ÷ (${formatDecimal(totals.effectiveInstConc, 1)} × ${utilPct}) = ${formatDecimal(totals.instByConc, 2)} 实例 → 按木桶短板取三者最大值 = ${formatDecimal(totals.baseInstances, 2)} 实例`;
+  const step5Sub = `① 生成速度维 = ${formatNumber(totals.totalPeakOutputTps, 0)} ÷ (${formatNumber(totals.effectiveInstOutputTps, 0)} × ${utilPct}) = ${formatDecimal(totals.instByDecode, 3)} 实例；② 读写综合算力维 = ${formatNumber(totals.totalWeightedDemandTps, 0)} ÷ (${formatNumber(totals.effectiveInstWeightedTps, 0)} × ${utilPct}) = ${formatDecimal(totals.instByCompute, 3)} 实例；③ 并发槽位维 = ${formatDecimal(totals.totalPeakConcurrency, 1)} ÷ (${formatDecimal(totals.effectiveInstConc, 1)} × ${utilPct}) = ${formatDecimal(totals.instByConc, 3)} 实例 → 按木桶短板取最大值并按 0.01 实例向上取整 = ${formatDecimal(totals.baseInstances, 2)} 实例`;
 
   const chipModel = model.chipModel || '910B3';
   const cardsPerServer = Math.max(1, model.cardsPerServer || 8);
 
-  const step6Sub = settings.enableNPlusOne
-    ? `开启 N+1 冗余：${formatDecimal(totals.baseInstances, 2)} + 1 = ${formatDecimal(totals.finalInstances, 2)} 实例；${chipModel} 卡数 = ceil((${formatDecimal(totals.finalInstances, 2)} × ${model.cardsPerInstance}) × 10) ÷ 10 = ${formatDecimal(totals.totalCards910B3, 1)} 卡；${cardsPerServer} 卡服务器 = ${formatDecimal(totals.totalCards910B3, 1)} ÷ ${cardsPerServer} = ${formatDecimal(totals.totalServers8Card, 2)} 台`
-    : `未开启 N+1 冗余：最终 ${formatDecimal(totals.finalInstances, 2)} 实例；${chipModel} 卡数 = ceil((${formatDecimal(totals.finalInstances, 2)} × ${model.cardsPerInstance}) × 10) ÷ 10 = ${formatDecimal(totals.totalCards910B3, 1)} 卡；${cardsPerServer} 卡服务器 = ${formatDecimal(totals.totalCards910B3, 1)} ÷ ${cardsPerServer} = ${formatDecimal(totals.totalServers8Card, 2)} 台`;
+  const step6Sub =
+    totals.finalInstances === 0
+      ? `当前业务流量为 0，无需分配算力实例（0.0 卡 / 0.00 台 ${cardsPerServer} 卡服务器）`
+      : settings.enableNPlusOne
+        ? `开启 N+1 冗余：${formatDecimal(totals.baseInstances, 2)} + 1 = ${formatDecimal(totals.finalInstances, 2)} 实例；${chipModel} 卡数 = ceil((${formatDecimal(totals.finalInstances, 2)} × ${model.cardsPerInstance}) × 10) ÷ 10 = ${formatDecimal(totals.totalCards910B3, 1)} 卡；${cardsPerServer} 卡服务器 = ${formatDecimal(totals.totalCards910B3, 1)} ÷ ${cardsPerServer} = ${formatDecimal(totals.totalServers8Card, 2)} 台`
+        : `未开启 N+1 冗余：最终 ${formatDecimal(totals.finalInstances, 2)} 实例；${chipModel} 卡数 = ceil((${formatDecimal(totals.finalInstances, 2)} × ${model.cardsPerInstance}) × 10) ÷ 10 = ${formatDecimal(totals.totalCards910B3, 1)} 卡；${cardsPerServer} 卡服务器 = ${formatDecimal(totals.totalCards910B3, 1)} ÷ ${cardsPerServer} = ${formatDecimal(totals.totalServers8Card, 2)} 台`;
 
   return [
     {
       stepNumber: 1,
       title: settings.enablePeakModel
-        ? '互联网高峰与突发请求率（Burst RPS）'
-        : '全天均值请求率（24h 均摊 RPS）',
+        ? '工作日高峰与平滑突发请求率（Burst RPS）'
+        : '工作日 8 小时均值请求率（8h 均摊 RPS）',
       subtitle: settings.enablePeakModel
-        ? '将日均任务按高峰时段集中度与瞬时峰值系数折算为峰值每秒请求数'
-        : '已关闭高峰突发模型，按全天 24 小时均匀分布计算每秒请求数',
+        ? '将日均任务按忙时集中度与 10–15 分钟级忙时波动系数折算为峰值每秒请求数'
+        : '已关闭高峰突发模型，按 8 小时工作日均匀分布计算每秒请求数',
       formula: settings.enablePeakModel
         ? 'peakAvgRps = (dailyTasks × turns × peakShare) / (peakHours × 3600);  burstRps = peakAvgRps × burstFactor'
-        : 'avgRps = (dailyTasks × turns) / (24 × 3600)',
+        : 'avgRps = (dailyTasks × turns) / (8 × 3600)',
       substitution: step1Sub,
-      resultLabel: settings.enablePeakModel ? '突发峰值 RPS' : '全天均值 RPS',
+      resultLabel: settings.enablePeakModel ? '忙时峰值 RPS' : '工作日均值 RPS',
       resultValue: `${formatDecimal(totals.totalBurstRps, 2)} req/s`,
     },
     {
@@ -426,8 +444,41 @@ export function evaluateModel(
     evaluateSingleWorkload(model, w, settings),
   );
 
-  const totalDailyTasks = details.reduce((s, d) => s + d.workload.dailyTasks, 0);
+  const totalDailyTasks = details.reduce(
+    (s, d) => s + Math.max(d.workload.dailyTasks, 0),
+    0,
+  );
   const totalDailyRequests = details.reduce((s, d) => s + d.dailyRequests, 0);
+  const totalDailyInputTokens = details.reduce(
+    (s, d) => s + d.dailyRequests * Math.max(d.workload.avgInputTokens, 1),
+    0,
+  );
+  const totalDailyOutputTokens = details.reduce(
+    (s, d) => s + d.dailyRequests * Math.max(d.workload.avgOutputTokens, 1),
+    0,
+  );
+  const totalDailyCachedTokens = details.reduce(
+    (s, d) =>
+      s +
+      d.dailyRequests *
+        Math.max(d.workload.avgInputTokens, 1) *
+        Math.min(Math.max(d.workload.cacheHitRate, 0), 0.99),
+    0,
+  );
+  const avgTaskDurationSec =
+    totalDailyTasks > 0
+      ? details.reduce(
+          (s, d) =>
+            s +
+            Math.max(d.workload.dailyTasks, 0) *
+              (d.estLatencySec * Math.max(d.workload.turnsPerTask, 1)),
+          0,
+        ) / totalDailyTasks
+      : details[0].estLatencySec * Math.max(details[0].workload.turnsPerTask, 1);
+  const avgCacheHitRate =
+    totalDailyInputTokens > 0
+      ? totalDailyCachedTokens / totalDailyInputTokens
+      : 0;
   const totalPeakAvgRps = details.reduce((s, d) => s + d.peakAvgRps, 0);
   const totalBurstRps = details.reduce((s, d) => s + d.burstRps, 0);
   const totalPeakOutputTps = details.reduce((s, d) => s + d.peakOutputTps, 0);
@@ -506,24 +557,20 @@ export function evaluateModel(
   const bottleneck = getBottleneckMeta(instByDecode, instByCompute, instByConc);
   const maxDim = Math.max(instByDecode, instByCompute, instByConc);
   const rawBaseInstances = maxDim;
-  const rawFinalInstances =
-    maxDim > 0
-      ? settings.enableNPlusOne
-        ? rawBaseInstances + 1
-        : rawBaseInstances
-      : 0;
 
   const baseInstances =
     rawBaseInstances > 0
       ? Math.ceil(rawBaseInstances * 100 - 1e-9) / 100
       : 0;
   const finalInstances =
-    rawFinalInstances > 0
-      ? Math.ceil(rawFinalInstances * 100 - 1e-9) / 100
+    baseInstances > 0
+      ? settings.enableNPlusOne
+        ? Math.round((baseInstances + 1) * 100) / 100
+        : baseInstances
       : 0;
 
   const cardsPerServer = Math.max(1, model.cardsPerServer || 8);
-  const rawCards910B3 = rawFinalInstances * model.cardsPerInstance;
+  const rawCards910B3 = finalInstances * model.cardsPerInstance;
   const totalCards910B3 =
     rawCards910B3 > 0
       ? Math.max(0.1, Math.ceil(rawCards910B3 * 10 - 1e-9) / 10)
@@ -533,8 +580,11 @@ export function evaluateModel(
       ? Number((totalCards910B3 / cardsPerServer).toFixed(2))
       : 0;
 
+  const exactCardsDemand =
+    (maxDim > 0 ? (settings.enableNPlusOne ? maxDim + 1 : maxDim) : 0) *
+    model.cardsPerInstance;
   const cardUtilizationInServers =
-    totalCards910B3 > 0 ? Math.min(1, rawCards910B3 / totalCards910B3) : 0;
+    totalCards910B3 > 0 ? Math.min(1, exactCardsDemand / totalCards910B3) : 0;
   const allocatedInstances =
     model.cardsPerInstance > 0 ? totalCards910B3 / model.cardsPerInstance : 0;
   const actualPeakUtil =
@@ -573,6 +623,11 @@ export function evaluateModel(
     workloadDetails: details,
     totalDailyTasks,
     totalDailyRequests,
+    totalDailyInputTokens,
+    totalDailyOutputTokens,
+    totalDailyCachedTokens,
+    avgTaskDurationSec,
+    avgCacheHitRate,
     totalPeakAvgRps,
     totalBurstRps,
     totalPeakOutputTps,

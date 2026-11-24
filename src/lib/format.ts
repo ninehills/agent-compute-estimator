@@ -34,3 +34,31 @@ export function formatCompactTokens(tokens: number): string {
   }
   return formatNumber(tokens, 0);
 }
+
+export function formatTokenVolume(tokens: number): string {
+  if (!Number.isFinite(tokens) || tokens <= 0) {
+    return '0';
+  }
+  if (tokens >= 1_000_000_000) {
+    return `${(tokens / 1_000_000_000).toFixed(2)}B`;
+  }
+  if (tokens >= 1_000_000) {
+    return `${(tokens / 1_000_000).toFixed(2)}M`;
+  }
+  if (tokens >= 1_000) {
+    return `${(tokens / 1_000).toFixed(1)}K`;
+  }
+  return formatNumber(tokens, 0);
+}
+
+export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return '0 s';
+  }
+  if (seconds >= 60) {
+    const mins = Math.floor(seconds / 60);
+    const rem = seconds - mins * 60;
+    return `${mins}分${rem.toFixed(1)}秒`;
+  }
+  return `${seconds.toFixed(1)} s`;
+}

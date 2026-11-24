@@ -1,5 +1,11 @@
 import { BENCHMARK_SCENARIOS } from '@/data/presets';
-import { formatDecimal, formatNumber, formatPercent } from '@/lib/format';
+import {
+  formatDecimal,
+  formatDuration,
+  formatNumber,
+  formatPercent,
+  formatTokenVolume,
+} from '@/lib/format';
 import type { GlobalEvalSettings, ModelEvalResult } from '@/types/calculator';
 
 function formatDateTime(date: Date): string {
@@ -60,7 +66,8 @@ export function generateFormalReport(
 
   const workloadRows = result.workloadDetails.map((d) => {
     const w = d.workload;
-    return `| ${w.name} | ${formatNumber(w.dailyTasks, 0)} | ${w.turnsPerTask} | ${formatNumber(w.avgInputTokens, 0)} / ${formatNumber(w.avgOutputTokens, 0)} | ${formatPercent(w.cacheHitRate, 0)} | ${w.peakHours}h / ${formatPercent(w.peakTrafficShare, 0)} | ${w.burstFactor}× | ${formatDecimal(d.burstRps, 2)} | ${formatDecimal(d.peakConcurrency, 1)} |`;
+    const safePeakHours = Math.min(Math.max(w.peakHours, 0.1), 8);
+    return `| ${w.name} | ${formatNumber(Math.max(w.dailyTasks, 0), 0)} | ${Math.max(w.turnsPerTask, 1)} | ${formatNumber(Math.max(w.avgInputTokens, 1), 0)} / ${formatNumber(Math.max(w.avgOutputTokens, 1), 0)} | ${formatPercent(w.cacheHitRate, 0)} | ${safePeakHours}h / ${formatPercent(w.peakTrafficShare, 0)} | ${w.burstFactor}× | ${formatDecimal(d.burstRps, 2)} | ${formatDecimal(d.peakConcurrency, 1)} |`;
   });
 
   const benchmarkRows = BENCHMARK_SCENARIOS.map((sc) => {
@@ -89,7 +96,7 @@ export function generateFormalReport(
     `> **生成时间**：${formatDateTime(now)}  `,
     `> **评估模型**：${result.model.name}（${result.model.totalParams} 总参 / ${result.model.activeParams} 激活，${result.model.precision}）  `,
     `> **资源模式**：共享集群资源池（卡数按 0.1 卡精度向上取整，台数按单机 ${result.model.cardsPerServer} 卡折算）  `,
-    `> **评估策略**：目标安全水位 ${formatPercent(settings.targetUtil, 0)} ｜ 高峰突发建模：${settings.enablePeakModel ? '已开启' : '已关闭（24h 均摊）'} ｜ Prefill 算力权重 γ_pd = ${settings.prefillWeight.toFixed(2)} ｜ N+1 冗余：${settings.enableNPlusOne ? '已开启' : '未开启'}`,
+    `> **评估策略**：目标安全水位 ${formatPercent(settings.targetUtil, 0)} ｜ 高峰突发建模：${settings.enablePeakModel ? '已开启' : '已关闭（8h 工作日均摊）'} ｜ Prefill 算力权重 γ_pd = ${settings.prefillWeight.toFixed(2)} ｜ N+1 冗余：${settings.enableNPlusOne ? '已开启' : '未开启'}`,
     ``,
     `---`,
     ``,
@@ -100,9 +107,11 @@ export function generateFormalReport(
     `| 核心评估指标 | 测算结果 | 备注说明 |`,
     `| :--- | :--- | :--- |`,
     `| **选定评估模型** | ${result.model.name} | 单实例：${result.model.cardsPerInstance} 卡 ${result.model.chipModel}（单机 ${result.model.cardsPerServer} 卡） |`,
-    `| **所需推理实例数** | **${formatDecimal(result.finalInstances, 2)} 实例** | 基础 ${formatDecimal(result.baseInstances, 2)} 实例${settings.enableNPlusOne ? ' + 1 热备（N+1）' : '（未开启 N+1）'} |`,
+    `| **所需推理实例数** | **${formatDecimal(result.finalInstances, 2)} 实例** | ${result.finalInstances === 0 ? '当前业务流量为 0，无需分配算力实例' : `基础 ${formatDecimal(result.baseInstances, 2)} 实例${settings.enableNPlusOne ? ' + 1 热备（N+1）' : '（未开启 N+1）'}`} |`,
     `| **${result.model.chipModel} 卡数需求** | **${formatDecimal(result.totalCards910B3, 1)} 卡** | 按 0.1 卡精度向上取整 |`,
     `| **${result.model.cardsPerServer} 卡服务器需求规模** | **${formatDecimal(result.totalServers8Card, 2)} 台** | 按 ${formatDecimal(result.totalCards910B3, 1)} 卡 ÷ ${result.model.cardsPerServer} 卡/台 折算 |`,
+    `| **日 Tokens 消耗（入 / 出 / 缓存）** | ${formatTokenVolume(result.totalDailyInputTokens)} / ${formatTokenVolume(result.totalDailyOutputTokens)} / ${formatTokenVolume(result.totalDailyCachedTokens)} | 平均 KV-Cache 命中率 ${formatPercent(result.avgCacheHitRate, 1)} |`,
+    `| **日任务量与单任务平均时长** | ${formatNumber(result.totalDailyTasks, 0)} 次/日 · ${formatDuration(result.avgTaskDurationSec)} | 含各轮模型调用累计推理耗时（单次均值 ${formatDecimal(result.avgEstLatencySec, 2)} s） |`,
     `| **峰值突发请求率（Burst RPS）** | ${formatDecimal(result.totalBurstRps, 2)} req/s | 高峰均值 ${formatDecimal(result.totalPeakAvgRps, 2)} req/s |`,
     `| **峰值输出吞吐 / 瞬时并发** | ${formatNumber(result.totalPeakOutputTps, 0)} tok/s / ${formatDecimal(result.totalPeakConcurrency, 1)} 路 | 估算 TTFT ${formatNumber(result.avgEstTtftMs, 0)} ms · 单路输出速度 ${formatDecimal(1000 / Math.max(result.avgEstTpotMs, 0.1), 1)} tok/s · 单次均值耗时 ${formatDecimal(result.avgEstLatencySec, 2)} s |`,
     `| **主导性能瓶颈与峰值水位** | ${result.bottleneckLabel}（${formatPercent(result.actualPeakUtil, 1)}） | 目标安全水位上限 ${formatPercent(settings.targetUtil, 0)} |`,
@@ -153,7 +162,8 @@ export function generateFormalReport(
     `| :--- | :---: | :---: | :---: | :---: | :---: | :---: |`,
     ...benchmarkRows,
     ``,
-    `> **[1] 口径说明**：表中 TTFT 首字延迟为计入对应场景 KV-Cache 前缀命中率后的首字延迟平均值（S1 为 0% 冷缓存均值，S2 为 30% 命中均值，S3 为 90% 命中均值）。`,
+    `> **[1] 口径说明**：表中 TTFT 首字延迟为计入对应场景 KV-Cache 前缀命中率后的首字延迟平均值（S1 为 0% 冷缓存均值，S2 为 30% 命中均值，S3 为 90% 命中均值）。  `,
+    `> **[2] 流量模型参考**：高峰流量参数参考 BurstGPT（arXiv:2401.17644，Azure OpenAI 企业级生产追踪集，全天 24h 峰均比约 4.1×，忙时 5 分钟窗口波动中位数约 1.25×）及政企 8 小时工作制办公曲线校准；忙时波动系数（1.10–1.30×）仅刻画 10–15 分钟级业务波峰，秒级随机抖动由安全水位吸收。`,
     ``,
   ];
 

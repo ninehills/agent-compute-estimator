@@ -1,5 +1,7 @@
 import {
   Activity,
+  Clock,
+  Coins,
   Cpu,
   Gauge,
   Layers,
@@ -7,6 +9,7 @@ import {
   ShieldCheck,
   Zap,
 } from 'lucide-react';
+import { TrafficProfileChart } from '@/components/TrafficProfileChart';
 import { Badge } from '@/components/ui/badge';
 import {
   Card,
@@ -15,7 +18,13 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { formatDecimal, formatNumber, formatPercent } from '@/lib/format';
+import {
+  formatDecimal,
+  formatDuration,
+  formatNumber,
+  formatPercent,
+  formatTokenVolume,
+} from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { GlobalEvalSettings, ModelEvalResult } from '@/types/calculator';
 
@@ -131,8 +140,9 @@ export function ResultDashboard({
               <span className="text-xs text-muted-foreground">实例</span>
             </div>
             <p className="mt-1.5 text-[11px] text-muted-foreground tabular-nums">
-              基础 {formatDecimal(result.baseInstances, 2)} 实例
-              {settings.enableNPlusOne ? ' + 1 热备（N+1）' : '（未开 N+1）'}
+              {result.finalInstances === 0
+                ? '当前业务流量为 0，无需分配实例'
+                : `基础 ${formatDecimal(result.baseInstances, 2)} 实例${settings.enableNPlusOne ? ' + 1 热备（N+1）' : '（未开 N+1）'}`}
             </p>
           </CardContent>
         </Card>
@@ -207,6 +217,129 @@ export function ResultDashboard({
         </Card>
       </div>
 
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">
+                日 Tokens 消耗
+              </span>
+              <Coins className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2 tabular-nums">
+              <div>
+                <p className="text-[11px] text-muted-foreground">输入（含缓存）</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
+                  {formatTokenVolume(result.totalDailyInputTokens)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">输出总数</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
+                  {formatTokenVolume(result.totalDailyOutputTokens)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">缓存命中</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-success-foreground">
+                  {formatTokenVolume(result.totalDailyCachedTokens)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">
+                日任务概览
+              </span>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2 tabular-nums">
+              <div>
+                <p className="text-[11px] text-muted-foreground">当日任务总数</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
+                  {formatNumber(result.totalDailyTasks, 0)}
+                  <span className="ml-0.5 text-[11px] font-normal text-muted-foreground">
+                    次
+                  </span>
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">单任务平均时长</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
+                  {formatDuration(result.avgTaskDurationSec)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">单次调用耗时</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
+                  {formatDecimal(result.avgEstLatencySec, 2)}
+                  <span className="ml-0.5 text-[11px] font-normal text-muted-foreground">
+                    s
+                  </span>
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-muted-foreground">
+                推理性能指标
+              </span>
+              <Zap className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-x-2.5 gap-y-2.5 tabular-nums">
+              <div>
+                <p className="text-[11px] text-muted-foreground">
+                  {settings.enablePeakModel ? '峰值 RPS' : '均值 RPS'}
+                </p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
+                  {formatDecimal(result.totalBurstRps, 2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">最大并发</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
+                  {formatDecimal(result.totalPeakConcurrency, 1)}
+                  <span className="ml-0.5 text-[10px] font-normal text-muted-foreground">
+                    路
+                  </span>
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">输出速度</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
+                  {formatDecimal(1000 / Math.max(result.avgEstTpotMs, 0.1), 1)}
+                  <span className="ml-0.5 text-[10px] font-normal text-muted-foreground">
+                    t/s
+                  </span>
+                </p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-[11px] text-muted-foreground">估算 TTFT / TPOT</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-foreground">
+                  {formatNumber(result.avgEstTtftMs, 0)}ms
+                  <span className="mx-1 text-muted-foreground">/</span>
+                  {formatDecimal(result.avgEstTpotMs, 1)}ms
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground">Cache 命中</p>
+                <p className="mt-0.5 font-mono text-sm font-semibold text-success-foreground">
+                  {formatPercent(result.avgCacheHitRate, 1)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         <Card className="lg:col-span-7">
           <CardHeader className="pb-3">
@@ -266,44 +399,6 @@ export function ResultDashboard({
                   </div>
                 );
               })}
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5 rounded-lg border border-border/80 bg-muted/35 p-3 sm:grid-cols-4">
-              <div>
-                <p className="text-[11px] text-muted-foreground">突发峰值 RPS</p>
-                <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums">
-                  {formatDecimal(result.totalBurstRps, 2)}
-                  <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-                    req/s
-                  </span>
-                </p>
-              </div>
-              <div>
-                <p className="text-[11px] text-muted-foreground">估算 TTFT / TPOT</p>
-                <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums">
-                  {formatNumber(result.avgEstTtftMs, 0)}ms
-                  <span className="mx-1 text-muted-foreground">/</span>
-                  {formatDecimal(result.avgEstTpotMs, 1)}ms
-                </p>
-              </div>
-              <div>
-                <p className="text-[11px] text-muted-foreground">单路输出速度</p>
-                <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums">
-                  {formatDecimal(1000 / Math.max(result.avgEstTpotMs, 0.1), 1)}
-                  <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-                    tok/s
-                  </span>
-                </p>
-              </div>
-              <div>
-                <p className="text-[11px] text-muted-foreground">平均单次耗时</p>
-                <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums">
-                  {formatDecimal(result.avgEstLatencySec, 2)}
-                  <span className="ml-1 text-[11px] font-normal text-muted-foreground">
-                    s
-                  </span>
-                </p>
-              </div>
             </div>
           </CardContent>
         </Card>
@@ -368,6 +463,8 @@ export function ResultDashboard({
           </CardContent>
         </Card>
       </div>
+
+      <TrafficProfileChart result={result} settings={settings} />
     </div>
   );
 }

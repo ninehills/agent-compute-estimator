@@ -19,7 +19,7 @@ export const BENCHMARK_SCENARIOS: ScenarioDefinition[] = [
     recommendedTool: 'EvalScope Perf / vLLM bench serve',
     recommendedDataset: 'random 合成集（0% 命中）或 ShareGPT（512–1.5K）',
     commandTemplate:
-      'evalscope perf --url http://127.0.0.1:8000/v1/chat/completions --model {{model}} --tokenizer-path /data/weights/{{model}} --api openai --dataset random --prefix-length 0 --min-prompt-length 1024 --max-prompt-length 1024 --min-tokens 512 --max-tokens 512 --extra-args \'{"ignore_eos": true}\' --parallel {{conc}} --number {{num}}',
+      'evalscope perf --url http://127.0.0.1:8000/v1/chat/completions --model {{model}} --tokenizer-path /data/weights/{{model}} --api openai --stream --dataset random --prefix-length 0 --min-prompt-length 1024 --max-prompt-length 1024 --min-tokens 512 --max-tokens 512 --extra-args \'{"ignore_eos": true}\' --parallel {{conc}} --number {{num}}',
   },
   {
     key: 'long_in_high_cache',
@@ -33,7 +33,7 @@ export const BENCHMARK_SCENARIOS: ScenarioDefinition[] = [
     recommendedTool: 'EvalScope Perf（适配 MindIE / vLLM-Ascend）',
     recommendedDataset: '固定前缀合成集（2458前缀+5734后缀=8192）/ LongBench QA / BIRD',
     commandTemplate:
-      'evalscope perf --url http://127.0.0.1:8000/v1/chat/completions --model {{model}} --tokenizer-path /data/weights/{{model}} --api openai --dataset random --prefix-length 2458 --min-prompt-length 5734 --max-prompt-length 5734 --min-tokens 1024 --max-tokens 1024 --extra-args \'{"ignore_eos": true}\' --parallel {{conc}} --number {{num}}',
+      'evalscope perf --url http://127.0.0.1:8000/v1/chat/completions --model {{model}} --tokenizer-path /data/weights/{{model}} --api openai --stream --dataset random --prefix-length 2458 --min-prompt-length 5734 --max-prompt-length 5734 --min-tokens 1024 --max-tokens 1024 --extra-args \'{"ignore_eos": true}\' --parallel {{conc}} --number {{num}}',
   },
   {
     key: 'long_in_long_out',
@@ -47,7 +47,7 @@ export const BENCHMARK_SCENARIOS: ScenarioDefinition[] = [
     recommendedTool: 'EvalScope Perf / vLLM bench serve',
     recommendedDataset: 'Mooncake Trace / SWE-bench 多轮轨迹 / 29491前缀+3277后缀=32768',
     commandTemplate:
-      'evalscope perf --url http://127.0.0.1:8000/v1/chat/completions --model {{model}} --tokenizer-path /data/weights/{{model}} --api openai --dataset random --prefix-length 29491 --min-prompt-length 3277 --max-prompt-length 3277 --min-tokens 1536 --max-tokens 1536 --extra-args \'{"ignore_eos": true}\' --parallel {{conc}} --number {{num}}',
+      'evalscope perf --url http://127.0.0.1:8000/v1/chat/completions --model {{model}} --tokenizer-path /data/weights/{{model}} --api openai --stream --dataset random --prefix-length 29491 --min-prompt-length 3277 --max-prompt-length 3277 --min-tokens 1536 --max-tokens 1536 --extra-args \'{"ignore_eos": true}\' --parallel {{conc}} --number {{num}}',
   },
 ];
 
@@ -216,8 +216,8 @@ export const WORKLOAD_PRESETS: WorkloadPreset[] = [
     cacheHitRate: 0.4,
     dailyTasks: 3000,
     peakHours: 4,
-    peakTrafficShare: 0.7,
-    burstFactor: 2.0,
+    peakTrafficShare: 0.6,
+    burstFactor: 1.25,
   },
   {
     key: 'report_writing',
@@ -229,9 +229,9 @@ export const WORKLOAD_PRESETS: WorkloadPreset[] = [
     turnsPerTask: 6,
     cacheHitRate: 0.65,
     dailyTasks: 300,
-    peakHours: 4,
-    peakTrafficShare: 0.65,
-    burstFactor: 1.8,
+    peakHours: 5,
+    peakTrafficShare: 0.7,
+    burstFactor: 1.15,
   },
   {
     key: 'ai_coding',
@@ -244,8 +244,8 @@ export const WORKLOAD_PRESETS: WorkloadPreset[] = [
     cacheHitRate: 0.88,
     dailyTasks: 400,
     peakHours: 6,
-    peakTrafficShare: 0.75,
-    burstFactor: 2.0,
+    peakTrafficShare: 0.8,
+    burstFactor: 1.1,
   },
   {
     key: 'smart_bi',
@@ -258,8 +258,8 @@ export const WORKLOAD_PRESETS: WorkloadPreset[] = [
     cacheHitRate: 0.6,
     dailyTasks: 2000,
     peakHours: 4,
-    peakTrafficShare: 0.75,
-    burstFactor: 2.2,
+    peakTrafficShare: 0.65,
+    burstFactor: 1.3,
   },
 ];
 
